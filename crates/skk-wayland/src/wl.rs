@@ -108,10 +108,12 @@ struct State {
     forwarded_keys: HashSet<u32>,
     repeat_rate: i32,
     repeat_delay: i32,
+    repeat_rate_limit: i32,
+    repeat_delay_min: i32,
     repeat: Option<Repeat>,
 }
 
-pub fn run(engine: Engine) -> Result<()> {
+pub fn run(engine: Engine, repeat_rate_limit: i32, repeat_delay_min: i32) -> Result<()> {
     let connection = Connection::connect_to_env().context("connect to Wayland display")?;
     let (globals, mut queue) =
         registry_queue_init::<State>(&connection).context("read Wayland globals")?;
@@ -155,13 +157,17 @@ pub fn run(engine: Engine) -> Result<()> {
         forwarded_keys: HashSet::new(),
         repeat_rate: 0,
         repeat_delay: 0,
+        repeat_rate_limit,
+        repeat_delay_min,
         repeat: None,
     };
     queue
         .roundtrip(&mut state)
         .context("initialize Wayland input method")?;
     if state.unavailable {
-        bail!("Wayland compositor reports that another input method owns this seat");
+        bail!(
+            "cannot start rskk-wayland: another Wayland input method (such as fcitx5 or ibus) owns this seat; stop it before starting rskk-wayland (Wayland allows only one input-method-v2 client per seat)"
+        );
     }
     info!("registered rskk-wayland as a Wayland input method");
 
@@ -174,7 +180,9 @@ pub fn run(engine: Engine) -> Result<()> {
             .dispatch_pending(&mut state)
             .context("dispatch pending Wayland events")?;
         if state.unavailable {
-            bail!("Wayland input method became unavailable, likely because of an IME conflict");
+            bail!(
+                "Wayland input method became unavailable; the compositor may have assigned this seat to another IME"
+            );
         }
         let Some(read_guard) = queue.prepare_read() else {
             continue;
@@ -202,7 +210,14 @@ pub fn run(engine: Engine) -> Result<()> {
             return Err(error).context("wait for Wayland events");
         }
         if polled > 0 && pollfd.revents & libc::POLLIN != 0 {
-            read_guard.read().context("read Wayland events")?;
+            match read_guard.read() {
+                Ok(_) => {}
+                // Readiness can disappear between poll() and Wayland's read_events().
+                // This is transient, so keep the event loop alive and try again.
+                Err(wayland_client::backend::WaylandError::Io(error))
+                    if error.kind() == std::io::ErrorKind::WouldBlock => {}
+                Err(error) => return Err(error).context("read Wayland events"),
+            }
         } else {
             drop(read_guard);
         }
@@ -355,12 +370,15 @@ impl State {
             Key::Backspace
         } else if keysym == xkb::keysyms::KEY_Escape {
             Key::Escape
-        } else if keysym == xkb::keysyms::KEY_Tab {
+        } else if keysym == xkb::keysyms::KEY_Tab || keysym == xkb::keysyms::KEY_ISO_Left_Tab {
             Key::Tab
         } else if keysym == xkb::keysyms::KEY_space {
             Key::Space
         } else {
             let codepoint = xkb::keysym_to_utf32(symbol);
+            if codepoint == 0 {
+                return None;
+            }
             let ch = char::from_u32(codepoint)?;
             if ctrl {
                 Key::Ctrl(ch.to_ascii_lowercase())
@@ -611,9 +629,13 @@ impl Dispatch<ZwpInputMethodKeyboardGrabV2, ()> for State {
                     .modifiers(mods_depressed, mods_latched, mods_locked, group);
             }
             GrabEvent::RepeatInfo { rate, delay } => {
-                state.repeat_rate = rate;
-                state.repeat_delay = delay;
-                if rate <= 0 {
+                state.repeat_rate = if rate <= 0 {
+                    0
+                } else {
+                    rate.min(state.repeat_rate_limit)
+                };
+                state.repeat_delay = delay.max(state.repeat_delay_min);
+                if state.repeat_rate <= 0 {
                     state.repeat = None;
                 }
             }

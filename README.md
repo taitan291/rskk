@@ -1,14 +1,14 @@
 # rskk
-
+codexの無料版トークンを枯らすために作らせた SKK
 Rust 製の SKK 日本語入力システムです。I/O 非依存の入力エンジン (`skk-core`)、SKK 辞書の読込とユーザー辞書 (`skk-dict`)、Wayland `input-method-v2` クライアント (`rskk-wayland`) で構成しています。
 
 ## 起動
 
-NixOS では `nix build` で `result/bin/rskk-wayland` を作れます。Nix パッケージには候補表示用の Noto CJK Sans を設定しています。`nix develop` は fenix の stable Rust、rust-analyzer、辞書、フォーマッタ、pre-commit フックを用意します。開発中の入力確認には `nix develop` の `RSKK_SYSTEM_DICT` を使えます。
+NixOS では `nix run .` で起動でき、`nix build` で `result/bin/rskk-wayland` を作れます。Nix パッケージには候補表示用の Noto CJK Sans を設定しています。`nix develop` は fenix の stable Rust、rust-analyzer、辞書、フォーマッタ、pre-commit フックを用意します。開発中の入力確認には `nix develop` の `RSKK_SYSTEM_DICT` を使えます。
 
-`rskk-wayland` を Wayland セッションで起動してください。起動時に `zwp_input_method_manager_v2`、`wl_seat`、`zwp_virtual_keyboard_v1` が必要です。入力モードは **Ctrl-J** または **Super-Space** で切り替えます。ひらがな入力中に `K` で変換開始、`Space` で変換し、続けて `Space` / `x` / `asdfjkl` で候補を選びます。候補が多い場合は `zwp_input_popup_surface_v2` に候補一覧を表示します。`Enter` で確定します。`q` はひらがな / カタカナ、`Ctrl-Q` は半角カタカナ、`L` は全角英数、`/` は abbrev、`Ctrl-G` は取消です。
+`rskk-wayland` を Wayland セッションで起動してください。起動時に `zwp_input_method_manager_v2`、`wl_seat`、`zwp_virtual_keyboard_v1` が必要です。入力モードは **Ctrl-J** または **Super-Space** で切り替えます。ひらがな入力中に `K` で変換開始、`Space` で変換し、続けて `Space` / `x` / `asdfjkl` で候補を選びます。候補が多い場合は `zwp_input_popup_surface_v2` に候補一覧を表示します。送りなしモードで `Tab` / `Shift-Tab` を押すと、ユーザー辞書の見出し語補完を順方向 / 逆方向に選べます。`Enter` で確定します。`q` はひらがな / カタカナ、`Ctrl-Q` は半角カタカナ、`L` は全角英数、`/` は abbrev、`Ctrl-G` は取消です。
 
-入力 method v2 を提供する compositor と `text-input-v3` を使う Wayland アプリが必要です。GTK / Qt の Wayland 版での動作を想定しています。XWayland アプリや、text-input を使わないアプリでは入力できないことがあります。Hyprland 上での実機試験はこの環境では行っていません。別の IME が同じ seat を使う場合も競合することがあります。
+入力 method v2 を提供する compositor と `text-input-v3` を使う Wayland アプリが必要です。GTK / Qt の Wayland 版での動作を想定しています。XWayland アプリや、text-input を使わないアプリでは入力できないことがあります。Hyprland 上での実機試験はこの環境では行っていません。Wayland では seat ごとに `input-method-v2` を使う IME は一つだけ登録できます。`fcitx5` や `ibus` が起動中は `rskk-wayland` を同時に起動できないため、既存 IME を終了してから起動してください。Fcitx5 の場合は `fcitx5-remote -e` で終了できます。
 
 ## 設定
 
@@ -30,6 +30,8 @@ marker_henkan = "▽"
 marker_henkan_select = "▼"
 kana_table = "rom"
 accept_illegal_result = false
+key_repeat_rate_limit = 15 # 長押し時の最大反復回数/秒。0 で無効
+key_repeat_delay_min = 500 # 長押しから反復開始までの最低待ち時間 (ms)
 ```
 
 `RSKK_CONFIG` は設定ファイルを、`RSKK_SYSTEM_DICT` は `:` 区切りのシステム辞書を、`RSKK_USER_DICT` はユーザー辞書を指定します。ユーザー辞書の既定値は `$XDG_DATA_HOME/rskk/user-dict` (既定 `~/.local/share/rskk/user-dict`) です。システム辞書は設定順に読み込み、ユーザー辞書を先に検索します。ユーザー辞書は UTF-8 固定で、学習内容をバックグラウンドでアトミック保存します。
@@ -49,6 +51,7 @@ accept_illegal_result = false
 - `Ctrl-G` は入力・変換・単語登録を取り消します。直前の確定を取り消す `kakuteiUndo` は未実装です。
 - 数値変換は `#0`、`#1`、`#2`、`#3`、`#8` のみです。
 - キー素通しは compositor の virtual-keyboard protocol に依存します。
-- EUC-JP / UTF-8 の辞書を読み込みます。圧縮辞書、skkserv、補完は対象外です。
+- 読み補完は送りなしのユーザー辞書見出しのみが対象で、候補は見出し語の辞書順です。システム辞書、圧縮辞書、skkserv は対象外です。
+- EUC-JP / UTF-8 の辞書を読み込みます。
 
 skkeleton の確認事項と差異は [docs/skkeleton-notes.md](docs/skkeleton-notes.md)、設計判断は [docs/decisions.md](docs/decisions.md) に記録しています。
