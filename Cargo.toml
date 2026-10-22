@@ -1,0 +1,26 @@
+[workspace]
+resolver = "3"
+members = ["crates/skk-core", "crates/skk-dict", "crates/skk-wayland"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://example.invalid/rskk"
+
+[workspace.dependencies]
+encoding_rs = "0.8.35"
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "2.0"
+toml = "0.8"
+tempfile = "3.20"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1.0"
+libc = "0.2"
+memmap2 = "0.9.12"
+cosmic-text = "0.19.0"
+wayland-client = "0.31.14"
+wayland-protocols = { version = "0.32.13", features = ["client"] }
+wayland-protocols-misc = { version = "0.3.12", features = ["client"] }
+xkbcommon = { version = "0.9.0", features = ["wayland"] }
