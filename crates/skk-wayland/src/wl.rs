@@ -51,8 +51,38 @@ struct KeyboardState {
 
 struct Repeat {
     keycode: u32,
-    event: KeyEvent,
+    event: Option<KeyEvent>,
+    forwarded: bool,
+    time: u32,
+    last: Instant,
     next: Instant,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum RepeatAction {
+    Forward { keycode: u32, time: u32 },
+    Engine(KeyEvent),
+}
+
+impl Repeat {
+    fn tick(&mut self, now: Instant, interval: Duration) -> Option<RepeatAction> {
+        if now < self.next {
+            return None;
+        }
+        self.time = self
+            .time
+            .wrapping_add(now.duration_since(self.last).as_millis() as u32);
+        self.last = now;
+        self.next = now + interval;
+        if self.forwarded {
+            Some(RepeatAction::Forward {
+                keycode: self.keycode,
+                time: self.time,
+            })
+        } else {
+            self.event.clone().map(RepeatAction::Engine)
+        }
+    }
 }
 
 struct ShmBuffer {
@@ -261,18 +291,45 @@ impl State {
     }
 
     fn fire_repeat(&mut self, qh: &QueueHandle<Self>) -> bool {
-        let Some(repeat) = self.repeat.as_mut() else {
+        let now = Instant::now();
+        let interval = Duration::from_secs_f64(1.0 / f64::from(self.repeat_rate.max(1)));
+        let Some(action) = self
+            .repeat
+            .as_mut()
+            .and_then(|repeat| repeat.tick(now, interval))
+        else {
             return false;
         };
-        if Instant::now() < repeat.next {
-            return false;
+        match action {
+            RepeatAction::Forward { keycode, time } => self.forward_key(time, keycode, true),
+            RepeatAction::Engine(event) => {
+                let output = self.engine.handle_key(event);
+                self.apply_output(output, qh);
+            }
         }
-        let event = repeat.event.clone();
-        let interval = Duration::from_secs_f64(1.0 / f64::from(self.repeat_rate.max(1)));
-        repeat.next = Instant::now() + interval;
-        let output = self.engine.handle_key(event);
-        self.apply_output(output, qh);
         true
+    }
+
+    fn start_repeat(
+        &mut self,
+        keycode: u32,
+        time: u32,
+        event: Option<KeyEvent>,
+        forwarded: bool,
+        repeatable: bool,
+    ) {
+        if !repeatable || self.repeat_rate <= 0 {
+            return;
+        }
+        let now = Instant::now();
+        self.repeat = Some(Repeat {
+            keycode,
+            event,
+            forwarded,
+            time,
+            last: now,
+            next: now + Duration::from_millis(self.repeat_delay.max(0) as u64),
+        });
     }
 
     fn key_event(&self, keycode: u32) -> Option<KeyEvent> {
@@ -511,31 +568,26 @@ impl Dispatch<ZwpInputMethodKeyboardGrabV2, ()> for State {
                     }
                     return;
                 }
-                let Some(event) = state.key_event(key) else {
-                    state.forward_key(time, key, true);
-                    state.forwarded_keys.insert(key);
-                    return;
-                };
                 let repeatable = state.keyboard.as_ref().is_some_and(|keyboard| {
                     keyboard
                         .keymap
                         .key_repeats(xkb::Keycode::new(key.saturating_add(8)))
                 });
+                let Some(event) = state.key_event(key) else {
+                    state.forward_key(time, key, true);
+                    state.forwarded_keys.insert(key);
+                    state.start_repeat(key, time, None, true, repeatable);
+                    return;
+                };
                 let output = state.engine.handle_key(event.clone());
-                if output.consumed {
+                let consumed = output.consumed;
+                if consumed {
                     state.apply_output(output, qh);
-                    if state.repeat_rate > 0 && repeatable {
-                        state.repeat = Some(Repeat {
-                            keycode: key,
-                            event,
-                            next: Instant::now()
-                                + Duration::from_millis(state.repeat_delay.max(0) as u64),
-                        });
-                    }
                 } else {
                     state.forward_key(time, key, true);
                     state.forwarded_keys.insert(key);
                 }
+                state.start_repeat(key, time, Some(event), !consumed, repeatable);
             }
             GrabEvent::Modifiers {
                 mods_depressed,
@@ -625,4 +677,47 @@ fn install_keymap(state: &mut State, format: u32, fd: OwnedFd, size: u32) -> Res
     state.virtual_keyboard.keymap(format, file.as_fd(), size);
     state.keyboard = Some(keyboard);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn repeat_tick_preserves_forwarding_route_and_respects_delay() {
+        let start = Instant::now();
+        let event = KeyEvent::new(Key::Char('a'));
+        let mut forwarded = Repeat {
+            keycode: 38,
+            event: None,
+            forwarded: true,
+            time: 100,
+            last: start,
+            next: start + Duration::from_millis(10),
+        };
+        assert_eq!(
+            forwarded.tick(start + Duration::from_millis(5), Duration::from_millis(20)),
+            None
+        );
+        assert_eq!(
+            forwarded.tick(start + Duration::from_millis(12), Duration::from_millis(20)),
+            Some(RepeatAction::Forward {
+                keycode: 38,
+                time: 112,
+            })
+        );
+
+        let mut handled = Repeat {
+            keycode: 38,
+            event: Some(event.clone()),
+            forwarded: false,
+            time: 100,
+            last: start,
+            next: start,
+        };
+        assert_eq!(
+            handled.tick(start + Duration::from_millis(15), Duration::from_millis(20)),
+            Some(RepeatAction::Engine(event))
+        );
+    }
 }
