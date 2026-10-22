@@ -71,6 +71,9 @@ fn add_grouping(digits: &str) -> String {
 }
 
 fn kanji_positional(digits: &str) -> String {
+    if digits.len() > 16 {
+        return digits.to_owned();
+    }
     let parsed = digits.parse::<u128>().unwrap_or(0);
     if parsed == 0 {
         return if digits.chars().all(|c| c == '0') {
@@ -78,9 +81,6 @@ fn kanji_positional(digits: &str) -> String {
         } else {
             "〇".repeat(digits.len())
         };
-    }
-    if digits.len() > 16 {
-        return digits.to_owned();
     }
     let small = ["", "十", "百", "千"];
     let large = ["", "万", "億", "兆", "京"];
@@ -132,6 +132,11 @@ mod tests {
         assert_eq!(
             convert_number_candidate("#0/#1/#2/#3/#8", "12345"),
             "12345/１２３４５/一二三四五/一万二千三百四十五/12,345"
+        );
+        let very_long_number = "1234567890123456789012345678901234567890";
+        assert_eq!(
+            convert_number_candidate("#3", very_long_number),
+            very_long_number
         );
     }
 }

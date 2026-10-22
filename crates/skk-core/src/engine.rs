@@ -283,7 +283,9 @@ impl Engine {
                 true
             }
             Key::Space => {
-                if self.phase == Phase::Henkan {
+                if self.mode == InputMode::Zenkaku {
+                    commit = Some("　".into());
+                } else if self.phase == Phase::Henkan {
                     self.next_candidate();
                 } else {
                     self.flush_roman();
@@ -1174,6 +1176,10 @@ mod tests {
 
         key(&mut e, 'L');
         assert_eq!(key(&mut e, 'A').commit.as_deref(), Some("Ａ"));
+        assert_eq!(
+            e.handle_key(KeyEvent::new(Key::Space)).commit.as_deref(),
+            Some("　")
+        );
 
         let mut e = engine(&[]);
         upper(&mut e, 'Y');
