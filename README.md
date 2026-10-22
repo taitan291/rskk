@@ -44,6 +44,10 @@ key_repeat_delay_min = 500 # 長押しから反復開始までの最低待ち時
 
 このリポジトリは SKK 辞書を同梱しません。nixpkgs の `skkDictionaries.l` を実行時に参照します。SKK-JISYO.L は GPL で配布されています。ユーザーが選択した外部辞書のライセンス条件に従ってください。
 
+## ライセンス
+
+rskk のライセンスは [MIT License](LICENSE) です。依存クレート、SKK 辞書、Noto CJK Sans フォントのライセンス情報は [第三者ライセンス表記](THIRD_PARTY_NOTICES.md) を参照してください。
+
 ## 現在の範囲と制約
 
 - 候補は preedit にインライン表示し、多数候補の選択時は `zwp_input_popup_surface_v2` と共有メモリで描画します。ポップアップの実コンポジタ上での動作は未確認です。
