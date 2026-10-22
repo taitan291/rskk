@@ -29,6 +29,18 @@ impl DictionaryIndex {
         map.get(key).cloned().unwrap_or_default()
     }
 
+    /// Return longer okuri-nasi keys beginning with `prefix`, in stable order.
+    pub fn complete(&self, prefix: &str) -> Vec<String> {
+        let mut keys: Vec<_> = self
+            .okuri_nasi
+            .keys()
+            .filter(|key| key.len() > prefix.len() && key.starts_with(prefix))
+            .cloned()
+            .collect();
+        keys.sort();
+        keys
+    }
+
     pub fn merge_ordered(&mut self, other: DictionaryIndex) {
         for (key, values) in other.okuri_ari {
             merge_candidates(self.okuri_ari.entry(key).or_default(), values);

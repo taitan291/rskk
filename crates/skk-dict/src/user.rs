@@ -105,6 +105,13 @@ impl Dictionary for UserDictionary {
             .unwrap_or_default()
     }
 
+    fn complete(&self, prefix: &str) -> Vec<String> {
+        self.index
+            .lock()
+            .map(|index| index.complete(prefix))
+            .unwrap_or_default()
+    }
+
     fn learn(&mut self, key: &str, okuri: Option<char>, candidate: &Candidate) {
         if let Ok(mut index) = self.index.lock() {
             let map = if okuri.is_some() {

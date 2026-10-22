@@ -43,5 +43,10 @@ fn main() -> Result<()> {
     );
     let kana_table = config.load_kana_table().context("load kana tables")?;
     let engine = Engine::with_kana_table(config.engine, kana_table, Box::new(dictionary));
-    wl::run(engine).context("run Wayland input method")
+    wl::run(
+        engine,
+        config.key_repeat_rate_limit,
+        config.key_repeat_delay_min,
+    )
+    .context("run Wayland input method")
 }

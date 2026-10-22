@@ -4,7 +4,7 @@ use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 use skk_core::{Config as EngineConfig, KanaTable};
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize)]
 #[serde(default)]
 pub struct AppConfig {
     #[serde(flatten)]
@@ -13,6 +13,21 @@ pub struct AppConfig {
     pub user_dictionary: Option<PathBuf>,
     #[serde(alias = "kana_table_files")]
     pub global_kana_table_files: Vec<PathBuf>,
+    pub key_repeat_rate_limit: i32,
+    pub key_repeat_delay_min: i32,
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            engine: EngineConfig::default(),
+            system_dictionaries: Vec::new(),
+            user_dictionary: None,
+            global_kana_table_files: Vec::new(),
+            key_repeat_rate_limit: 15,
+            key_repeat_delay_min: 500,
+        }
+    }
 }
 
 impl AppConfig {
@@ -59,6 +74,9 @@ impl AppConfig {
         }
         if config.engine.show_candidates_count == 0 {
             bail!("show_candidates_count must be greater than zero");
+        }
+        if config.key_repeat_rate_limit < 0 || config.key_repeat_delay_min < 0 {
+            bail!("key_repeat_rate_limit and key_repeat_delay_min must not be negative");
         }
         if config.engine.select_candidate_keys.chars().count() != 7
             || config.engine.select_candidate_keys.contains('x')

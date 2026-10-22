@@ -25,6 +25,10 @@ impl Candidate {
 
 pub trait Dictionary {
     fn lookup(&self, key: &str, okuri: Option<char>) -> Vec<Candidate>;
+    /// Return longer okuri-nasi dictionary keys that start with `prefix`.
+    fn complete(&self, _prefix: &str) -> Vec<String> {
+        Vec::new()
+    }
     fn learn(&mut self, key: &str, okuri: Option<char>, candidate: &Candidate);
     fn purge(&mut self, key: &str, okuri: Option<char>, candidate: &Candidate);
 }
@@ -123,6 +127,12 @@ pub struct CandidateWindow {
     pub select_keys: String,
 }
 
+struct CompletionState {
+    prefix: String,
+    words: Vec<String>,
+    selected: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Output {
     pub consumed: bool,
@@ -192,6 +202,7 @@ pub struct Engine {
     registration_roman: String,
     registration_key: String,
     registration_okuri: Option<char>,
+    completion: Option<CompletionState>,
 }
 
 impl Engine {
@@ -220,6 +231,7 @@ impl Engine {
             registration_roman: String::new(),
             registration_key: String::new(),
             registration_okuri: None,
+            completion: None,
         }
     }
 
@@ -255,6 +267,9 @@ impl Engine {
             self.phase = Phase::Input;
             return self.output(false, None);
         }
+        if ev.key != Key::Tab {
+            self.completion = None;
+        }
 
         let mut commit = None;
         let consumed = match ev.key.clone() {
@@ -266,21 +281,23 @@ impl Engine {
                 commit = self.kakutei();
                 true
             }
-            Key::Backspace | Key::Ctrl('h') => {
-                self.delete_char();
-                true
-            }
+            Key::Backspace | Key::Ctrl('h') => self.delete_char(),
             Key::Escape => {
                 self.clear_input();
                 self.phase = Phase::Escape;
                 true
             }
             Key::Enter => {
+                let had_input = self.phase != Phase::Input
+                    || !self.reading.is_empty()
+                    || !self.roman.is_empty()
+                    || !self.okuri_text.is_empty()
+                    || self.number_digits.is_some();
                 commit = self.kakutei();
-                if !self.config.egg_like_newline {
+                if had_input && !self.config.egg_like_newline {
                     commit.get_or_insert_with(String::new).push('\n');
                 }
-                true
+                had_input
             }
             Key::Space => {
                 if self.mode == InputMode::Zenkaku {
@@ -293,7 +310,7 @@ impl Engine {
                 }
                 true
             }
-            Key::Tab => false,
+            Key::Tab => self.complete_reading(ev.shift),
             Key::Ctrl('q') => {
                 self.flush_roman();
                 self.change_mode(InputMode::Hankata);
@@ -417,6 +434,7 @@ impl Engine {
         self.number_digits = None;
         self.registration_word.clear();
         self.registration_roman.clear();
+        self.completion = None;
     }
 
     fn process_char(&mut self, ch: char, shifted: bool) -> Option<String> {
@@ -654,6 +672,49 @@ impl Engine {
         }
     }
 
+    fn complete_reading(&mut self, backwards: bool) -> bool {
+        let supported_phase = self.phase == Phase::OkuriNasi
+            || (self.phase == Phase::Input && self.mode == InputMode::Abbrev);
+        if !supported_phase {
+            return false;
+        }
+        let flushed_roman = !self.roman.is_empty();
+        self.flush_roman();
+        if self.reading.is_empty() {
+            return flushed_roman;
+        }
+
+        if let Some(completion) = &mut self.completion
+            && (completion.prefix == self.reading
+                || completion.words[completion.selected] == self.reading)
+        {
+            completion.selected = if backwards {
+                completion
+                    .selected
+                    .checked_sub(1)
+                    .unwrap_or(completion.words.len() - 1)
+            } else {
+                (completion.selected + 1) % completion.words.len()
+            };
+            self.reading = completion.words[completion.selected].clone();
+            return true;
+        }
+
+        let prefix = self.reading.clone();
+        let words = self.dict.complete(&prefix);
+        if words.is_empty() {
+            return flushed_roman;
+        }
+        let selected = if backwards { words.len() - 1 } else { 0 };
+        self.reading = words[selected].clone();
+        self.completion = Some(CompletionState {
+            prefix,
+            words,
+            selected,
+        });
+        true
+    }
+
     fn next_candidate(&mut self) {
         if self.candidates.is_empty() {
             return;
@@ -756,33 +817,37 @@ impl Engine {
         }
     }
 
-    fn delete_char(&mut self) {
+    fn delete_char(&mut self) -> bool {
         if self.phase == Phase::Henkan {
             self.candidates.clear();
             self.phase = Phase::OkuriNasi;
         }
-        if !self.roman.is_empty() {
-            self.roman.pop();
-            return;
-        }
         if self.phase == Phase::Register {
             if !self.registration_roman.is_empty() {
                 self.registration_roman.pop();
-                return;
-            }
-            if !self.registration_word.is_empty() {
+            } else if !self.registration_word.is_empty() {
                 self.registration_word.pop();
             }
-            return;
+            return true;
+        }
+        if !self.roman.is_empty() {
+            self.roman.pop();
+            return true;
+        }
+        if self.phase == Phase::Input && self.reading.is_empty() && self.okuri_text.is_empty() {
+            return false;
         }
         if !self.okuri_text.is_empty() {
             self.okuri_text.pop();
-        } else {
+        } else if !self.reading.is_empty() {
             self.reading.pop();
         }
         if self.reading.is_empty() {
             self.phase = Phase::Input;
+            self.okuri_consonant = None;
+            self.okuri_text.clear();
         }
+        true
     }
 
     fn learn_machine_conversion(&mut self) -> String {

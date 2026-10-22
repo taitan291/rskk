@@ -77,6 +77,10 @@ impl Dictionary for LayeredDictionary {
         result
     }
 
+    fn complete(&self, prefix: &str) -> Vec<String> {
+        self.user.complete(prefix)
+    }
+
     fn learn(&mut self, key: &str, okuri: Option<char>, candidate: &Candidate) {
         self.suppressed
             .remove(&(key.to_owned(), okuri, candidate.text.clone()));
