@@ -1,5 +1,6 @@
 mod config;
 mod popup;
+mod repeat;
 mod wl;
 
 use std::{env, time::Instant};
