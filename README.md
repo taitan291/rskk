@@ -6,6 +6,17 @@ Rust 製の SKK 日本語入力システムです。I/O 非依存の入力エン
 
 NixOS では `nix run .` で起動でき、`nix build` で `result/bin/rskk-wayland` を作れます。Nix パッケージには候補表示用の Noto CJK Sans を設定しています。`nix develop` は fenix の stable Rust、rust-analyzer、辞書、フォーマッタ、pre-commit フックを用意します。開発中の入力確認には `nix develop` の `RSKK_SYSTEM_DICT` を使えます。
 
+### Nix で導入する
+
+GitHub から直接実行・導入できます。
+
+```sh
+nix run github:taitan291/rskk
+nix profile install github:taitan291/rskk
+```
+
+別の flake から使う場合は `inputs.rskk.url = "github:taitan291/rskk";` を追加し、`packages.${system}.default` を参照するか、`overlays.default` を適用して `pkgs.rskk-wayland` を使います。
+
 `rskk-wayland` を Wayland セッションで起動してください。起動時に `zwp_input_method_manager_v2`、`wl_seat`、`zwp_virtual_keyboard_v1` が必要です。入力モードは **Ctrl-J** または **Super-Space** で切り替えます。ひらがな入力中に `K` で変換開始、`Space` で変換し、続けて `Space` / `x` / `asdfjkl` で候補を選びます。候補が多い場合は `zwp_input_popup_surface_v2` に候補一覧を表示します。送りなしモードで `Tab` / `Shift-Tab` を押すと、ユーザー辞書の見出し語補完を順方向 / 逆方向に選べます。`Enter` で確定します。`q` はひらがな / カタカナ、`Ctrl-Q` は半角カタカナ、`L` は全角英数、`/` は abbrev、`Ctrl-G` は取消です。
 
 入力 method v2 を提供する compositor と `text-input-v3` を使う Wayland アプリが必要です。GTK / Qt の Wayland 版での動作を想定しています。XWayland アプリや、text-input を使わないアプリでは入力できないことがあります。Hyprland 上での実機試験はこの環境では行っていません。Wayland では seat ごとに `input-method-v2` を使う IME は一つだけ登録できます。`fcitx5` や `ibus` が起動中は `rskk-wayland` を同時に起動できないため、既存 IME を終了してから起動してください。Fcitx5 の場合は `fcitx5-remote -e` で終了できます。

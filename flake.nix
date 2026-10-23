@@ -30,6 +30,10 @@
         "aarch64-linux"
       ];
 
+      flake.overlays.default = final: _prev: {
+        rskk-wayland = inputs.self.packages.${final.stdenv.hostPlatform.system}.default;
+      };
+
       perSystem =
         {
           config,
@@ -136,6 +140,11 @@
                 --set-default RSKK_SYSTEM_DICT ${skkJisyoL}/share/skk/SKK-JISYO.L \
                 --set FONTCONFIG_FILE ${testFonts}
             '';
+          };
+
+          apps.default = {
+            type = "app";
+            program = "${config.packages.default}/bin/rskk-wayland";
           };
 
           checks.quality = rustPlatform.buildRustPackage {
