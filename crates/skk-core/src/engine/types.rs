@@ -33,6 +33,8 @@ pub trait Dictionary {
 pub enum InputMode {
     #[default]
     Disabled,
+    /// Pass every key through untouched, including Ctrl-J. Entered and left via the control command, never by keys.
+    Direct,
     Hira,
     Kata,
     Hankata,

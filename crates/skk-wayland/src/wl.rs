@@ -40,6 +40,7 @@ use wayland_protocols_misc::{
 use xkbcommon::xkb;
 
 use crate::{
+    ipc,
     popup::{PopupRenderer, RenderedPopup},
     repeat::{Repeat, RepeatAction},
 };
@@ -106,6 +107,7 @@ pub fn run(engine: Engine, repeat_rate_limit: i32, repeat_delay_min: i32) -> Res
     let virtual_keyboard = virtual_manager.create_virtual_keyboard(&seat, &qh, ());
     let popup_surface = compositor.create_surface(&qh, ());
     let popup = input_method.get_input_popup_surface(&popup_surface, &qh, ());
+    let control = ipc::bind().context("open control socket")?;
     let mut state = State {
         engine,
         input_method,
@@ -161,14 +163,21 @@ pub fn run(engine: Engine, repeat_rate_limit: i32, repeat_delay_min: i32) -> Res
         let timeout_ms = timeout.map_or(-1, |duration| {
             duration.as_millis().min(i32::MAX as u128) as i32
         });
-        let mut pollfd = libc::pollfd {
-            fd: read_guard.connection_fd().as_raw_fd(),
-            events: libc::POLLIN,
-            revents: 0,
-        };
+        let mut pollfds = [
+            libc::pollfd {
+                fd: read_guard.connection_fd().as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            },
+            libc::pollfd {
+                fd: control.as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            },
+        ];
         // The fd and pollfd stay valid for the duration of poll; the read guard owns the
         // synchronized Wayland socket read until it is either used or dropped.
-        let polled = unsafe { libc::poll(&mut pollfd, 1, timeout_ms) };
+        let polled = unsafe { libc::poll(pollfds.as_mut_ptr(), 2, timeout_ms) };
         if polled < 0 {
             let error = std::io::Error::last_os_error();
             if error.kind() == std::io::ErrorKind::Interrupted {
@@ -176,7 +185,7 @@ pub fn run(engine: Engine, repeat_rate_limit: i32, repeat_delay_min: i32) -> Res
             }
             return Err(error).context("wait for Wayland events");
         }
-        if polled > 0 && pollfd.revents & libc::POLLIN != 0 {
+        if polled > 0 && pollfds[0].revents & libc::POLLIN != 0 {
             match read_guard.read() {
                 Ok(_) => {}
                 // Readiness can disappear between poll() and Wayland's read_events().
@@ -191,11 +200,25 @@ pub fn run(engine: Engine, repeat_rate_limit: i32, repeat_delay_min: i32) -> Res
         queue
             .dispatch_pending(&mut state)
             .context("dispatch Wayland events")?;
+        for command in ipc::drain(&control) {
+            state.apply_command(command, &qh);
+        }
         state.fire_repeat(&qh);
     }
 }
 
 impl State {
+    fn apply_command(&mut self, command: ipc::Command, qh: &QueueHandle<Self>) {
+        let output = match command {
+            ipc::Command::Direct => self.engine.set_direct(true),
+            ipc::Command::Normal => self.engine.set_direct(false),
+        };
+        self.repeat = None;
+        if self.active {
+            self.apply_output(output, qh);
+        }
+    }
+
     fn apply_output(&mut self, output: Output, qh: &QueueHandle<Self>) {
         if !output.consumed {
             return;

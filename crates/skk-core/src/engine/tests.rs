@@ -266,3 +266,30 @@ fn number_markers_and_newline_setting() {
         Some("か\n")
     );
 }
+
+#[test]
+fn direct_mode_passes_everything_through() {
+    let mut e = engine(&[]);
+    e.set_direct(true);
+    for ch in ['a', 'k', 'l'] {
+        let out = key(&mut e, ch);
+        assert!(!out.consumed);
+        assert!(out.commit.is_none());
+    }
+    assert!(!e.handle_key(KeyEvent::ctrl('j')).consumed);
+    assert!(!e.handle_key(KeyEvent::new(Key::Escape)).consumed);
+    assert_eq!(e.mode(), InputMode::Direct);
+}
+
+#[test]
+fn set_direct_toggles_without_keys() {
+    let mut e = engine(&[]);
+    key(&mut e, 'k');
+    let out = e.set_direct(true);
+    assert_eq!(e.mode(), InputMode::Direct);
+    assert!(out.preedit.text.is_empty());
+    e.set_direct(false);
+    assert_eq!(e.mode(), InputMode::Hira);
+    e.set_direct(false);
+    assert_eq!(e.mode(), InputMode::Hira);
+}

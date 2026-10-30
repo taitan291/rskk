@@ -1,4 +1,5 @@
 mod config;
+mod ipc;
 mod popup;
 mod repeat;
 mod wl;
@@ -18,13 +19,18 @@ fn main() -> Result<()> {
         .init();
     if env::args().any(|arg| arg == "--help" || arg == "-h") {
         println!(
-            "rskk-wayland — Wayland input-method-v2 SKK\n\nUSAGE: rskk-wayland [--help] [--version]\n\nToggle SKK with Ctrl-J or Super-Space. See README.md for configuration."
+            "rskk-wayland — Wayland input-method-v2 SKK\n\nUSAGE: rskk-wayland [--help] [--version]\n       rskk-wayland direct   switch the running instance to raw passthrough (nvim)\n       rskk-wayland normal   return the running instance to SKK input\n\nToggle SKK with Ctrl-J or Super-Space. See README.md for configuration."
         );
         return Ok(());
     }
     if env::args().any(|arg| arg == "--version" || arg == "-V") {
         println!("rskk-wayland {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
+    }
+    if let Some(word) = env::args().nth(1) {
+        let command = ipc::Command::parse(&word)
+            .with_context(|| format!("unknown argument `{word}`; see --help"))?;
+        return ipc::send(command);
     }
     let config = AppConfig::load().context("load rskk configuration")?;
     if config.system_dictionaries.is_empty() {

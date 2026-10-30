@@ -89,16 +89,17 @@ impl Engine {
 
     pub fn handle_key(&mut self, ev: KeyEvent) -> Output {
         let toggle = ev.logo && ev.key == Key::Space;
+        let passthrough = matches!(self.mode, InputMode::Disabled | InputMode::Direct);
         let activate = toggle || (self.mode == InputMode::Disabled && ev.key == Key::Ctrl('j'));
         if activate {
-            if self.mode == InputMode::Disabled {
+            if passthrough {
                 self.enable();
             } else {
                 self.disable();
             }
             return self.output(true, None);
         }
-        if self.mode == InputMode::Disabled {
+        if passthrough {
             return self.output(false, None);
         }
         if self.phase == Phase::Escape {
@@ -234,14 +235,35 @@ impl Engine {
         } else {
             InputMode::Hira
         };
-        if self.mode == InputMode::Disabled {
+        if matches!(self.mode, InputMode::Disabled | InputMode::Direct) {
             self.mode = InputMode::Hira;
         }
         self.phase = Phase::Input;
     }
 
+    /// Switch the raw passthrough mode on or off from outside the key path (CLI command).
+    /// Turning it off only affects `Direct`; other modes are left alone.
+    pub fn set_direct(&mut self, on: bool) -> Output {
+        if on {
+            self.enter_direct();
+        } else if self.mode == InputMode::Direct {
+            self.enable();
+        }
+        self.output(true, None)
+    }
+
+    /// Switch to the raw passthrough mode (for editors such as nvim).
+    fn enter_direct(&mut self) {
+        if !matches!(self.mode, InputMode::Disabled | InputMode::Direct) {
+            self.last_mode = self.mode;
+        }
+        self.mode = InputMode::Direct;
+        self.clear_input();
+        self.phase = Phase::Input;
+    }
+
     fn disable(&mut self) {
-        if self.mode != InputMode::Disabled {
+        if !matches!(self.mode, InputMode::Disabled | InputMode::Direct) {
             self.last_mode = self.mode;
         }
         self.mode = InputMode::Disabled;
