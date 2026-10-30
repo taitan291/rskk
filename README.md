@@ -73,5 +73,3 @@ rskk のライセンスは [MIT License](LICENSE) です。依存クレート、
 - キー素通しは compositor の virtual-keyboard protocol に依存します。
 - 読み補完は送りなしのユーザー辞書見出しのみが対象で、候補は見出し語の辞書順です。システム辞書、圧縮辞書、skkserv は対象外です。
 - EUC-JP / UTF-8 の辞書を読み込みます。
-
-skkeleton の確認事項と差異は [docs/skkeleton-notes.md](docs/skkeleton-notes.md)、設計判断は [docs/decisions.md](docs/decisions.md) に記録しています。
